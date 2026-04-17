@@ -1,5 +1,6 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabase';
 
 // ── DATA ─────────────────────────────────────────────────────────────
 
@@ -274,18 +275,22 @@ function MealSection({ label, icon, recetas, hechas, expandida, setExpandida, co
 // ── MAIN ──────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const [tab,       setTab]       = useState('hoy');
-  const [hechas,    setHechas]    = useState<number[]>([]);
-  const [expandida, setExpandida] = useState<number | null>(null);
-  const [xp,        setXp]        = useState(680);
-  const [confetti,  setConfetti]  = useState(false);
-  const [levelUp,   setLevelUp]   = useState(false);
-  const [monsters,  setMonsters]  = useState(0);
-  const [colas,     setColas]     = useState(0);
-  const [gymHecho,  setGymHecho]  = useState(false);
+  const [tab,              setTab]              = useState('hoy');
+  const [hechas,           setHechas]           = useState<number[]>([]);
+  const [expandida,        setExpandida]        = useState<number | null>(null);
+  const [xp,               setXp]               = useState(680);
+  const [confetti,         setConfetti]         = useState(false);
+  const [levelUp,          setLevelUp]          = useState(false);
+  const [monsters,         setMonsters]         = useState(0);
+  const [colas,            setColas]            = useState(0);
+  const [gymHecho,         setGymHecho]         = useState(false);
+  const [rachaMonsterDias, setRachaMonsterDias] = useState(0);
+  const [dbLoading,        setDbLoading]        = useState(true);
+  const loadedRef = useRef(false);
+
+  const TODAY = new Date().toISOString().split('T')[0];
 
   const rachaRefrescoDias = 12;
-  const rachaMonsterDias  = 5;
   const refrescoTomado    = monsters > 0 || colas > 0;
   const monsterTomado     = monsters > 0;
 
@@ -311,6 +316,73 @@ export default function Home() {
   const pasosEquil = Math.max(0, Math.round(balance * 22));
   const gymEquil   = Math.max(0, Math.round(balance / 8));
 
+  // ── LOAD from Supabase on mount ──────────────────────────────────
+  useEffect(() => {
+    async function load() {
+      const [{ data: perfil }, { data: misiones }, { data: bebidas }] = await Promise.all([
+        supabase.from('perfil').select('xp,racha_sin_monster').eq('nombre','cabre').single(),
+        supabase.from('misiones_dia').select('*').eq('fecha', TODAY).single(),
+        supabase.from('bebidas_dia').select('monsters,cocacolas').eq('fecha', TODAY).single(),
+      ]);
+
+      if (perfil) {
+        setXp(perfil.xp);
+        setRachaMonsterDias(perfil.racha_sin_monster);
+      }
+      if (misiones) {
+        const ids: number[] = [];
+        if (misiones.desayuno_hecho) ids.push(3, 4);
+        if (misiones.comida_hecha)   ids.push(1);
+        if (misiones.cena_hecha)     ids.push(2);
+        setHechas(ids);
+        setGymHecho(misiones.gym_hecho ?? false);
+      }
+      if (bebidas) {
+        setMonsters(bebidas.monsters ?? 0);
+        setColas(bebidas.cocacolas ?? 0);
+      }
+
+      loadedRef.current = true;
+      setDbLoading(false);
+    }
+    load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── SAVE XP + racha to perfil ────────────────────────────────────
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    supabase.from('perfil').update({
+      xp,
+      racha_sin_monster: monsterTomado ? 0 : rachaMonsterDias,
+      fecha_ultima_actualizacion: TODAY,
+    }).eq('nombre','cabre').then(() => {});
+  }, [xp, monsterTomado]);
+
+  // ── SAVE misiones_dia ────────────────────────────────────────────
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    supabase.from('misiones_dia').upsert({
+      fecha:           TODAY,
+      desayuno_hecho:  hechas.some(id => [3,4].includes(id)),
+      comida_hecha:    hechas.includes(1),
+      cena_hecha:      hechas.includes(2),
+      gym_hecho:       gymHecho,
+      limpieza_hecha:  false,
+    }, { onConflict: 'fecha' }).then(() => {});
+  }, [hechas, gymHecho]);
+
+  // ── SAVE bebidas_dia ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    supabase.from('bebidas_dia').upsert({
+      fecha:     TODAY,
+      monsters,
+      cocacolas: colas,
+      copas:     0,
+    }, { onConflict: 'fecha' }).then(() => {});
+  }, [monsters, colas]);
+
   const navTabs = [
     { id: 'hoy',    label: 'Hoy',    icon: '🍳' },
     { id: 'kcal',   label: 'Kcal',   icon: '⚡' },
@@ -319,6 +391,15 @@ export default function Home() {
   ];
 
   const sec = { background: C.c1, border: `1px solid ${C.bdr}`, borderRadius: 20, marginBottom: 12, padding: '18px' };
+
+  if (dbLoading) return (
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontFamily: SYNE, fontSize: 28, fontWeight: 800, color: C.acc, letterSpacing: -1 }}>Cabre</div>
+        <div style={{ fontSize: 12, color: C.mut, marginTop: 8, fontFamily: INTER }}>cargando datos…</div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', justifyContent: 'center' }}>
