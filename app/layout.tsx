@@ -1,16 +1,29 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata, Viewport } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "La Cocina del Rey",
-  description: "App de hábitos para Cabre",
+  title: 'La Cocina del Rey',
+  description: 'App de hábitos para Cabre',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Cabre',
+  },
+  icons: {
+    apple: '/icon-192.png',
+  },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export const viewport: Viewport = {
+  themeColor: '#06060a',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
       <head>

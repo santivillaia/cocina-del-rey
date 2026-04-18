@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X POST http://localhost:3000/api/recetas-ia -H \"Content-Type: application/json\" -d \"{\\\\\"tipo\\\\\":\\\\\"cena\\\\\"}\")",
+      "Bash(curl -s -w \"\\\\n---STATUS:%{http_code}\" -X POST http://localhost:3000/api/recetas-ia -H \"Content-Type: application/json\" -d \"{\\\\\"tipo\\\\\":\\\\\"cena\\\\\",\\\\\"restricciones\\\\\":\\\\\"rapida\\\\\"}\")",
+      "Bash(npx tsc *)"
+    ]
+  }
+}
