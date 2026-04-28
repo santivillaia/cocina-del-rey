@@ -289,11 +289,12 @@ function Banner({ img, titulo, texto }: { img: string; titulo: string; texto: st
 
 type Receta = typeof RECETAS[0];
 
-function RecetaCard({ r, hecha, expandida, setExpandida, completar, compact }: {
+function RecetaCard({ r, hecha, expandida, setExpandida, completar, compact, onDelete }: {
   r: Receta; hecha: boolean; expandida: number | null;
   setExpandida: (id: number | null) => void;
   completar?: (id: number) => void;
   compact?: boolean;
+  onDelete?: () => void;
 }) {
   const open = expandida === r.id;
   const nv   = nivelConfig[r.nivel];
@@ -345,6 +346,11 @@ function RecetaCard({ r, hecha, expandida, setExpandida, completar, compact }: {
               {hecha ? '✓ MISIÓN COMPLETADA +40XP' : 'MARCAR COMPLETADO +40XP'}
             </button>
           )}
+          {onDelete && (
+            <button onClick={onDelete} style={{ width:'100%', marginTop:8, padding:10, borderRadius:13, border:`1px solid ${C.accd}`, background:'#1a0508', color:C.acc, fontFamily:INTER, fontSize:11, cursor:'pointer', fontWeight:600 }}>
+              🗑️ Eliminar receta
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -369,6 +375,14 @@ export default function Home() {
   // Perfil / XP
   const [xp,               setXp]               = useState(0);
   const [rachaMonsterDias, setRachaMonsterDias] = useState(0);
+  const [rachaHabitos,     setRachaHabitos]     = useState(0);
+
+  // Toast feedback
+  const [toast, setToast] = useState<{msg:string;ok:boolean}|null>(null);
+  const showToast = useCallback((msg:string, ok=true) => { setToast({msg,ok}); setTimeout(()=>setToast(null),2800); }, []);
+
+  // Confirmar borrar gasto
+  const [gastoAEliminar, setGastoAEliminar] = useState<number|null>(null);
 
   // Misiones diarias
   const [hechas,   setHechas]   = useState<number[]>([]);
@@ -461,6 +475,24 @@ export default function Home() {
         ]);
 
         if (perfil) { setXp(perfil.xp ?? 0); prevXpRef.current = perfil.xp ?? 0; setRachaMonsterDias(perfil.racha_sin_monster ?? 0); }
+
+        // Calcular racha de hábitos: días consecutivos con al menos 1 misión
+        {
+          const { data: histMisiones } = await supabase.from('misiones_dia').select('fecha,desayuno_hecho,comida_hecha,cena_hecha,gym_hecho').order('fecha', { ascending: false }).limit(60);
+          let racha = 0;
+          if (histMisiones) {
+            const hoyStr = toLocalDate(new Date());
+            for (let i = 0; i < histMisiones.length; i++) {
+              const m = histMisiones[i];
+              const esperado = toLocalDate(new Date(Date.now() - i * 86400000));
+              if (m.fecha !== esperado) break;
+              if (m.desayuno_hecho || m.comida_hecha || m.cena_hecha || m.gym_hecho) racha++;
+              else if (m.fecha !== hoyStr) break;
+            }
+          }
+          setRachaHabitos(racha);
+        }
+
         if (misiones) {
           const ids: number[] = [];
           if (misiones.desayuno_hecho) ids.push(3,4,5);
@@ -607,9 +639,10 @@ export default function Home() {
     if (isNaN(importe) || importe <= 0 || !gastoDesc.trim()) return;
     setGuardandoGasto(true);
     const { data, error } = await supabase.from('gastos').insert({ fecha: TODAY, importe, descripcion: gastoDesc.trim() }).select().single();
-    if (!error && data) { setGastosLista(prev => [data, ...prev]); setGastoImporte(''); setGastoDesc(''); }
+    if (!error && data) { setGastosLista(prev => [data, ...prev]); setGastoImporte(''); setGastoDesc(''); showToast('Gasto guardado'); }
+    else if (error) showToast('Error al guardar', false);
     setGuardandoGasto(false);
-  }, [gastoImporte, gastoDesc, TODAY]);
+  }, [gastoImporte, gastoDesc, TODAY, showToast]);
 
   // ── EDITAR GASTO ─────────────────────────────────────────────────
   const abrirEdicionGasto = useCallback((g: Gasto) => {
@@ -631,8 +664,10 @@ export default function Home() {
   // ── ELIMINAR GASTO ───────────────────────────────────────────────
   const eliminarGasto = useCallback(async (id: number) => {
     const { error } = await supabase.from('gastos').delete().eq('id', id);
-    if (!error) setGastosLista(prev => prev.filter(g => g.id !== id));
-  }, []);
+    if (!error) { setGastosLista(prev => prev.filter(g => g.id !== id)); showToast('Gasto eliminado'); }
+    else showToast('Error al eliminar', false);
+    setGastoAEliminar(null);
+  }, [showToast]);
 
   // ── GUARDAR PRESUPUESTO ──────────────────────────────────────────
   const guardarPresupuesto = useCallback(async () => {
@@ -882,6 +917,13 @@ export default function Home() {
           </div>
         )}
 
+        {/* TOAST */}
+        {toast && (
+          <div style={{ position:'fixed', top:16, left:'50%', transform:'translateX(-50%)', zIndex:200, background: toast.ok ? '#0d2b1a' : '#2b0d0d', border:`1px solid ${toast.ok ? C.grnl : C.acc}`, borderRadius:14, padding:'10px 20px', fontFamily:INTER, fontSize:13, color: toast.ok ? C.grnl : C.acc, fontWeight:600, pointerEvents:'none', whiteSpace:'nowrap' }}>
+            {toast.ok ? '✓' : '⚠️'} {toast.msg}
+          </div>
+        )}
+
         {/* ── TOPBAR ── */}
         <div style={{ background:C.c1, borderBottom:`1px solid ${C.bdr}`, padding:'20px 18px 16px', flexShrink:0 }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
@@ -901,13 +943,22 @@ export default function Home() {
                 <div style={{ fontSize:10, color:C.dim, marginTop:2, fontFamily:INTER }}>{fechaHoy()}</div>
               </div>
             </div>
-            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', background:C.c3, border:`1px solid ${monsterTomado ? C.accd : C.grn}`, borderRadius:16, padding:'10px 16px', gap:2 }}>
-              {noMonsterImg
-                ? <span style={{ fontSize:22 }}>🥤</span>
-                : <img src="/monster.png" alt="M" style={{ width:26, height:26, objectFit:'contain' }} onError={() => setNoMonsterImg(true)} />
-              }
-              <div style={{ fontFamily:SYNE, fontSize:28, fontWeight:800, color: monsterTomado ? C.acc : C.grnl, lineHeight:1 }}>{monsterTomado ? '0' : rachaMonsterDias}</div>
-              <div style={{ fontSize:8, color:C.mut, fontWeight:600, textTransform:'uppercase', letterSpacing:1, fontFamily:INTER }}>sin Monster</div>
+            <div style={{ display:'flex', gap:8 }}>
+              {rachaHabitos > 0 && (
+                <div style={{ display:'flex', flexDirection:'column', alignItems:'center', background:C.c3, border:`1px solid ${C.gold}40`, borderRadius:16, padding:'10px 14px', gap:2 }}>
+                  <span style={{ fontSize:20 }}>🔥</span>
+                  <div style={{ fontFamily:SYNE, fontSize:28, fontWeight:800, color:C.gold, lineHeight:1 }}>{rachaHabitos}</div>
+                  <div style={{ fontSize:8, color:C.mut, fontWeight:600, textTransform:'uppercase', letterSpacing:1, fontFamily:INTER }}>días racha</div>
+                </div>
+              )}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', background:C.c3, border:`1px solid ${monsterTomado ? C.accd : C.grn}`, borderRadius:16, padding:'10px 14px', gap:2 }}>
+                {noMonsterImg
+                  ? <span style={{ fontSize:22 }}>🥤</span>
+                  : <img src="/monster.png" alt="M" style={{ width:26, height:26, objectFit:'contain' }} onError={() => setNoMonsterImg(true)} />
+                }
+                <div style={{ fontFamily:SYNE, fontSize:28, fontWeight:800, color: monsterTomado ? C.acc : C.grnl, lineHeight:1 }}>{monsterTomado ? '0' : rachaMonsterDias}</div>
+                <div style={{ fontSize:8, color:C.mut, fontWeight:600, textTransform:'uppercase', letterSpacing:1, fontFamily:INTER }}>sin Monster</div>
+              </div>
             </div>
           </div>
 
@@ -1224,9 +1275,10 @@ export default function Home() {
                           <span style={{ fontFamily:SYNE, fontSize:11, fontWeight:800, color:C.mut, textTransform:'uppercase', letterSpacing:2.5 }}>{grupo.label}</span>
                           <div style={{ flex:1, height:1, background:C.bdr }} />
                         </div>
-                        {all.map(r => (
-                          <RecetaCard key={r.id} r={r} hecha={false} expandida={expandida} setExpandida={setExpandida} compact />
-                        ))}
+                        {all.map(r => {
+                          const esExtra = recetasExtra.some(x => x.id === r.id);
+                          return <RecetaCard key={r.id} r={r} hecha={false} expandida={expandida} setExpandida={setExpandida} compact onDelete={esExtra ? () => setRecetasExtra(prev => prev.filter(x => x.id !== r.id)) : undefined} />;
+                        })}
                       </div>
                     );
                   })}
@@ -1480,14 +1532,28 @@ export default function Home() {
                 </div>
               ) : (() => {
                 const cats = [...new Set(listaCompra.map(i => i.cat))].sort();
-                return cats.map(cat => (
+                const todosChecked = listaCompra.every(i => compraChecked.has(i.nombre));
+                return (<>
+                  <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+                    <button onClick={() => setCompraChecked(todosChecked ? new Set() : new Set(listaCompra.map(i=>i.nombre)))}
+                      style={{ flex:1, padding:'10px', borderRadius:12, border:`1px solid ${C.bdr}`, background:C.c1, color:todosChecked?C.acc:C.grnl, fontFamily:SYNE, fontWeight:800, fontSize:11, cursor:'pointer', textTransform:'uppercase', letterSpacing:1 }}>
+                      {todosChecked ? '✕ Desmarcar todo' : '✓ Marcar todo'}
+                    </button>
+                    {compraChecked.size > 0 && (
+                      <button onClick={() => setCompraChecked(new Set())}
+                        style={{ padding:'10px 16px', borderRadius:12, border:`1px solid ${C.bdr}`, background:C.c1, color:C.mut, fontFamily:INTER, fontSize:11, cursor:'pointer' }}>
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+                  {cats.map(cat => (
                   <div key={cat} style={sec}>
                     <div style={{ fontSize:10, fontWeight:700, color:C.acc, textTransform:'uppercase', letterSpacing:3, marginBottom:14, fontFamily:INTER }}>{cat}</div>
                     {listaCompra.filter(i => i.cat === cat).map((ing, idx, arr) => (
                       <CompraItem key={ing.nombre} emoji={ing.emoji} nombre={ing.nombre} qty={ing.qty} last={idx===arr.length-1} checked={compraChecked.has(ing.nombre)} onToggle={() => setCompraChecked(prev => { const s = new Set(prev); s.has(ing.nombre) ? s.delete(ing.nombre) : s.add(ing.nombre); return s; })} />
                     ))}
                   </div>
-                ));
+                ))}</>);
               })()}
             </>
           )}
@@ -1594,10 +1660,17 @@ export default function Home() {
                               style={{ width:30, height:30, borderRadius:8, border:`1px solid ${C.bdr}`, background:C.c2, color:C.mut, fontSize:13, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                               ✏️
                             </button>
-                            <button onClick={() => eliminarGasto(g.id)}
-                              style={{ width:30, height:30, borderRadius:8, border:`1px solid ${C.accd}`, background:'#1a0508', color:C.acc, fontSize:13, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                              🗑️
-                            </button>
+                            {gastoAEliminar === g.id ? (
+                              <div style={{ display:'flex', gap:4 }}>
+                                <button onClick={() => eliminarGasto(g.id)} style={{ width:30, height:30, borderRadius:8, border:'none', background:C.acc, color:'#fff', fontSize:11, cursor:'pointer', fontWeight:800 }}>✓</button>
+                                <button onClick={() => setGastoAEliminar(null)} style={{ width:30, height:30, borderRadius:8, border:`1px solid ${C.bdr}`, background:'transparent', color:C.mut, fontSize:13, cursor:'pointer' }}>✕</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setGastoAEliminar(g.id)}
+                                style={{ width:30, height:30, borderRadius:8, border:`1px solid ${C.accd}`, background:'#1a0508', color:C.acc, fontSize:13, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                🗑️
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}
