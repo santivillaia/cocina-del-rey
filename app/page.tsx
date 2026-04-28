@@ -403,7 +403,7 @@ export default function Home() {
   const [pushSupported,      setPushSupported]      = useState(false);
 
   // Notas/tareas del día
-  const [notas,              setNotas]              = useState<{id:number;texto:string;hecha:boolean}[]>([]);
+  const [notas,              setNotas]              = useState<{id:number;texto:string;hecha:boolean}[]>(() => { try { return JSON.parse((typeof window !== 'undefined' ? localStorage : null)?.getItem('cabre_notas') ?? '[]'); } catch { return []; } });
   const [notaInput,          setNotaInput]          = useState('');
 
 
@@ -413,7 +413,7 @@ export default function Home() {
   const [iaGenerando,     setIaGenerando]     = useState(false);
   const [iaReceta,        setIaReceta]        = useState<RecetaIA | null>(null);
   const [iaError,         setIaError]         = useState('');
-  const [recetasExtra,    setRecetasExtra]    = useState<(RecetaIA & { id: number; tipo: TipoComida | 'plato' })[]>([]);
+  const [recetasExtra,    setRecetasExtra]    = useState<(RecetaIA & { id: number; tipo: TipoComida | 'plato' })[]>(() => { try { return JSON.parse((typeof window !== 'undefined' ? localStorage : null)?.getItem('cabre_recetas_extra') ?? '[]'); } catch { return []; } });
 
   // BMR editable
   const [bmr,          setBmr]          = useState(2000);
@@ -495,7 +495,7 @@ export default function Home() {
   // ── SAVE PERFIL ──────────────────────────────────────────────────
   useEffect(() => {
     if (!loadedRef.current) return;
-    supabase.from('perfil').update({ xp, racha_sin_monster: monsters > 0 ? 0 : rachaMonsterDias, fecha_ultima_actualizacion: TODAY }).eq('nombre','cabre').then(({error}) => { if(error) console.error(error); });
+    supabase.from('perfil').upsert({ nombre: 'cabre', xp, racha_sin_monster: monsters > 0 ? 0 : rachaMonsterDias, fecha_ultima_actualizacion: TODAY }, { onConflict: 'nombre' }).then(({error}) => { if(error) console.error(error); });
   }, [xp]); // eslint-disable-line
 
   // ── SAVE MISIONES ────────────────────────────────────────────────
@@ -592,6 +592,10 @@ export default function Home() {
     const newLvl = getLevelInfo(nuevo).nivel;
     if (newLvl > prevLvl) { setTimeout(() => { setLevelUp(newLvl); playSound('levelup'); }, 500); }
   }, [hechas, xp]);
+
+  // ── PERSIST NOTAS & RECETAS EXTRA ───────────────────────────────
+  useEffect(() => { try { localStorage.setItem('cabre_notas', JSON.stringify(notas)); } catch {} }, [notas]);
+  useEffect(() => { try { localStorage.setItem('cabre_recetas_extra', JSON.stringify(recetasExtra)); } catch {} }, [recetasExtra]);
 
   // ── GUARDAR GASTO ────────────────────────────────────────────────
   const guardarGasto = useCallback(async () => {
