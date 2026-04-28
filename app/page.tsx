@@ -402,8 +402,9 @@ export default function Home() {
   const [pushSub,            setPushSub]            = useState<PushSubscription | null>(null);
   const [pushSupported,      setPushSupported]      = useState(false);
 
-  // Notas/tareas del día
-  const [notas,              setNotas]              = useState<{id:number;texto:string;hecha:boolean}[]>(() => { try { return JSON.parse((typeof window !== 'undefined' ? localStorage : null)?.getItem('cabre_notas') ?? '[]'); } catch { return []; } });
+  // Notas/tareas del día (por fecha)
+  const NOTAS_KEY = `cabre_notas_${toLocalDate(new Date())}`;
+  const [notas,              setNotas]              = useState<{id:number;texto:string;hecha:boolean}[]>(() => { try { return JSON.parse((typeof window !== 'undefined' ? localStorage : null)?.getItem(NOTAS_KEY) ?? '[]'); } catch { return []; } });
   const [notaInput,          setNotaInput]          = useState('');
 
 
@@ -433,6 +434,8 @@ export default function Home() {
   const [editGastoDesc,       setEditGastoDesc]       = useState('');
 
   const TODAY     = useRef(toLocalDate(new Date())).current;
+  const COMPRA_KEY = `cabre_compra_${toLocalDate(getMonday(new Date()))}`;
+  const [compraChecked, setCompraChecked] = useState<Set<string>>(() => { try { return new Set(JSON.parse((typeof window !== 'undefined' ? localStorage : null)?.getItem(COMPRA_KEY) ?? '[]')); } catch { return new Set(); } });
   const loadedRef = useRef(false);
   const prevXpRef = useRef(0);
 
@@ -594,8 +597,9 @@ export default function Home() {
   }, [hechas, xp]);
 
   // ── PERSIST NOTAS & RECETAS EXTRA ───────────────────────────────
-  useEffect(() => { try { localStorage.setItem('cabre_notas', JSON.stringify(notas)); } catch {} }, [notas]);
+  useEffect(() => { try { localStorage.setItem(NOTAS_KEY, JSON.stringify(notas)); } catch {} }, [notas]); // eslint-disable-line
   useEffect(() => { try { localStorage.setItem('cabre_recetas_extra', JSON.stringify(recetasExtra)); } catch {} }, [recetasExtra]);
+  useEffect(() => { try { localStorage.setItem(COMPRA_KEY, JSON.stringify([...compraChecked])); } catch {} }, [compraChecked]); // eslint-disable-line
 
   // ── GUARDAR GASTO ────────────────────────────────────────────────
   const guardarGasto = useCallback(async () => {
@@ -724,7 +728,7 @@ export default function Home() {
 
   const guardarRecetaIA = useCallback(() => {
     if (!iaReceta) return;
-    const id = 1000 + recetasExtra.length;
+    const id = Date.now();
     const tipoFinal: TipoComida | 'plato' = iaTipo === 'desayuno' ? 'desayuno' : 'plato';
     setRecetasExtra(prev => [...prev, { ...iaReceta, id, tipo: tipoFinal }]);
     setIaReceta(null);
@@ -773,7 +777,7 @@ export default function Home() {
     });
     const map = new Map<string, { emoji:string; nombre:string; qty:string; cat:string }>();
     ids.forEach(id => {
-      const r = RECETAS.find(r => r.id === id);
+      const r = [...RECETAS, ...recetasExtra].find(r => r.id === id);
       if (!r) return;
       r.ingredientes.forEach(ing => { if (!map.has(ing.nombre)) map.set(ing.nombre, ing); });
     });
@@ -1480,7 +1484,7 @@ export default function Home() {
                   <div key={cat} style={sec}>
                     <div style={{ fontSize:10, fontWeight:700, color:C.acc, textTransform:'uppercase', letterSpacing:3, marginBottom:14, fontFamily:INTER }}>{cat}</div>
                     {listaCompra.filter(i => i.cat === cat).map((ing, idx, arr) => (
-                      <CompraItem key={ing.nombre} emoji={ing.emoji} nombre={ing.nombre} qty={ing.qty} last={idx===arr.length-1} />
+                      <CompraItem key={ing.nombre} emoji={ing.emoji} nombre={ing.nombre} qty={ing.qty} last={idx===arr.length-1} checked={compraChecked.has(ing.nombre)} onToggle={() => setCompraChecked(prev => { const s = new Set(prev); s.has(ing.nombre) ? s.delete(ing.nombre) : s.add(ing.nombre); return s; })} />
                     ))}
                   </div>
                 ));
@@ -1623,10 +1627,9 @@ export default function Home() {
 }
 
 // Separado para evitar re-renders desde Home
-function CompraItem({ emoji, nombre, qty, last }: { emoji:string; nombre:string; qty:string; last:boolean }) {
-  const [checked, setChecked] = useState(false);
+function CompraItem({ emoji, nombre, qty, last, checked, onToggle }: { emoji:string; nombre:string; qty:string; last:boolean; checked:boolean; onToggle:()=>void }) {
   return (
-    <div onClick={() => setChecked(v => !v)} style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 0', borderBottom: last ? 'none' : `1px solid ${C.bdr}`, cursor:'pointer' }}>
+    <div onClick={onToggle} style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 0', borderBottom: last ? 'none' : `1px solid ${C.bdr}`, cursor:'pointer' }}>
       <div style={{ width:22, height:22, borderRadius:6, border:`1.5px solid ${checked ? C.grnl : C.bdr}`, background: checked ? C.grnl : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, color:'#06060a', flexShrink:0, transition:'all 0.2s' }}>
         {checked && '✓'}
       </div>
