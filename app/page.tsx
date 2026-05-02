@@ -418,7 +418,7 @@ export default function Home() {
 
   // Notas/tareas del día (por fecha)
   const NOTAS_KEY = `cabre_notas_${toLocalDate(new Date())}`;
-  const [notas,              setNotas]              = useState<{id:number;texto:string;hecha:boolean}[]>(() => { try { return JSON.parse((typeof window !== 'undefined' ? localStorage : null)?.getItem(NOTAS_KEY) ?? '[]'); } catch { return []; } });
+  const [notas,              setNotas]              = useState<{id:number;texto:string;hecha:boolean}[]>([]);
   const [notaInput,          setNotaInput]          = useState('');
 
 
@@ -428,7 +428,7 @@ export default function Home() {
   const [iaGenerando,     setIaGenerando]     = useState(false);
   const [iaReceta,        setIaReceta]        = useState<RecetaIA | null>(null);
   const [iaError,         setIaError]         = useState('');
-  const [recetasExtra,    setRecetasExtra]    = useState<(RecetaIA & { id: number; tipo: TipoComida | 'plato' })[]>(() => { try { return JSON.parse((typeof window !== 'undefined' ? localStorage : null)?.getItem('cabre_recetas_extra') ?? '[]'); } catch { return []; } });
+  const [recetasExtra,    setRecetasExtra]    = useState<(RecetaIA & { id: number; tipo: TipoComida | 'plato' })[]>([]);
 
   // BMR editable
   const [bmr,          setBmr]          = useState(2000);
@@ -449,7 +449,7 @@ export default function Home() {
 
   const TODAY     = useRef(toLocalDate(new Date())).current;
   const COMPRA_KEY = `cabre_compra_${toLocalDate(getMonday(new Date()))}`;
-  const [compraChecked, setCompraChecked] = useState<Set<string>>(() => { try { return new Set(JSON.parse((typeof window !== 'undefined' ? localStorage : null)?.getItem(COMPRA_KEY) ?? '[]')); } catch { return new Set(); } });
+  const [compraChecked, setCompraChecked] = useState<Set<string>>(new Set());
   const loadedRef = useRef(false);
   const prevXpRef = useRef(0);
 
@@ -515,6 +515,12 @@ export default function Home() {
           if (p) { setPresupuesto(Number(p.valor)); setPresupuestoInput(p.valor); }
           const b = settings.find(s => s.clave === 'bmr');
           if (b) { setBmr(Number(b.valor)); setBmrInput(b.valor); }
+          const re = settings.find(s => s.clave === 'recetas_extra');
+          if (re) { try { setRecetasExtra(JSON.parse(re.valor)); } catch {} }
+          const cc = settings.find(s => s.clave === `compra_checked_${toLocalDate(getMonday(new Date()))}`);
+          if (cc) { try { setCompraChecked(new Set(JSON.parse(cc.valor))); } catch {} }
+          const no = settings.find(s => s.clave === `notas_${TODAY}`);
+          if (no) { try { setNotas(JSON.parse(no.valor)); } catch {} }
         }
       } catch (e) {
         setDbError('Error al conectar con la base de datos.');
@@ -629,9 +635,18 @@ export default function Home() {
   }, [hechas, xp]);
 
   // ── PERSIST NOTAS & RECETAS EXTRA ───────────────────────────────
-  useEffect(() => { try { localStorage.setItem(NOTAS_KEY, JSON.stringify(notas)); } catch {} }, [notas]); // eslint-disable-line
-  useEffect(() => { try { localStorage.setItem('cabre_recetas_extra', JSON.stringify(recetasExtra)); } catch {} }, [recetasExtra]);
-  useEffect(() => { try { localStorage.setItem(COMPRA_KEY, JSON.stringify([...compraChecked])); } catch {} }, [compraChecked]); // eslint-disable-line
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    supabase.from('settings').upsert({ clave: `notas_${TODAY}`, valor: JSON.stringify(notas) }, { onConflict: 'clave' }).then(({error}) => { if(error) console.error(error); });
+  }, [notas]); // eslint-disable-line
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    supabase.from('settings').upsert({ clave: 'recetas_extra', valor: JSON.stringify(recetasExtra) }, { onConflict: 'clave' }).then(({error}) => { if(error) console.error(error); });
+  }, [recetasExtra]);
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    supabase.from('settings').upsert({ clave: COMPRA_KEY, valor: JSON.stringify([...compraChecked]) }, { onConflict: 'clave' }).then(({error}) => { if(error) console.error(error); });
+  }, [compraChecked]); // eslint-disable-line
 
   // ── GUARDAR GASTO ────────────────────────────────────────────────
   const guardarGasto = useCallback(async () => {

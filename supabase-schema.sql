@@ -56,6 +56,10 @@ insert into settings (clave, valor) values
   ('bmr',         '2000'),
   ('presupuesto', '150')
   on conflict (clave) do nothing;
+-- Otras claves gestionadas dinámicamente por la app:
+--   'recetas_extra'              → JSON array de recetas IA guardadas
+--   'compra_checked_{YYYY-MM-DD}' → JSON array de items marcados en la lista de la compra (lunes de la semana)
+--   'notas_{YYYY-MM-DD}'          → JSON array de notas/tareas del día
 
 -- Suscripciones push (para notificaciones PWA)
 create table if not exists push_subscriptions (
